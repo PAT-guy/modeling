@@ -47,7 +47,7 @@
   main{flex:1;display:flex;min-height:0;}
   .workspace{flex:1;display:flex;flex-direction:column;min-width:0;background:#15171a;}
   .subtoolbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap;}
-  .subtoolbar label.chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);}
+  label.chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);}
   .tool-group{display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:7px;flex-wrap:wrap;}
   .tool-group-label{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-right:2px;white-space:nowrap;}
   .canvas-wrap{flex:1;overflow:auto;padding:24px;}
@@ -162,6 +162,7 @@
         <button id="btnCancelDraw" class="danger" disabled>Annuler le tracé</button>
         <button id="btnFinishLine" class="primary" style="display:none;">✓ Terminer le trait</button>
         <label class="chk"><input type="checkbox" id="smoothChk" checked> lissage des contours</label>
+        <div class="field" id="lineWidthField" style="display:none;" title="Épaisseur du trait, choisie avant de dessiner : le tracé s'affiche à cette épaisseur pendant que tu dessines. Réglable finement (début→fin) après coup dans le formulaire de la couche."><label>Épaisseur (<span id="lineWidthVal">2</span>px)</label><input type="range" id="lineWidthSlider" min="0.5" max="20" step="0.5" value="2" style="width:90px"></div>
       </div>
       <div class="tool-group">
         <span class="tool-group-label">Image</span>
@@ -276,6 +277,35 @@
       <h2><span class="sec-title" data-collapse="labelBody"><span class="chev">▾</span> Labels (annotations)</span><button class="small" id="btnLabelMode">🏷 placer un label</button></h2>
       <div id="labelBody">
         <div id="labelList" class="stats">Aucun label.</div>
+      </div>
+    </div>
+
+    <div class="aside-section" id="textboxSection">
+      <h2><span class="sec-title" data-collapse="textboxBody"><span class="chev">▾</span> Zones de texte</span><button class="small" id="btnTextboxMode">🗒 placer une zone de texte</button></h2>
+      <div id="textboxBody">
+        <div class="editor-form" id="textboxEditor" style="display:none;margin-bottom:10px;">
+          <div class="field"><label>Texte (plusieurs lignes possibles)</label><textarea id="tbText" rows="4" style="min-height:70px;"></textarea></div>
+          <div class="row2">
+            <div class="field"><label>Largeur (px)</label><input type="number" id="tbWidth" min="40" step="1" value="200"></div>
+            <div class="field"><label>Taille police (px)</label><input type="number" id="tbFontSize" min="8" max="60" step="1" value="14"></div>
+          </div>
+          <div class="row2">
+            <label class="chk"><input type="checkbox" id="tbBold"> Gras</label>
+            <label class="chk"><input type="checkbox" id="tbItalic"> Italique</label>
+            <label class="chk"><input type="checkbox" id="tbUnderline"> Souligné</label>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Couleur du texte / contour</label><input type="color" id="tbColor" value="#ffcf4d" style="padding:2px;height:32px;"></div>
+            <div class="field"><label>Couleur de fond (surlignage)</label><input type="color" id="tbBgColor" value="#141414" style="padding:2px;height:32px;"></div>
+          </div>
+          <label class="chk"><input type="checkbox" id="tbHighlight" checked> Fond opaque (surlignage) — sinon texte seul, sans fond</label>
+          <div class="form-actions">
+            <button class="primary small" id="btnTbSave">Enregistrer</button>
+            <button class="danger small" id="btnTbDelete" style="display:none;">Supprimer</button>
+            <button class="small" id="btnTbCancel">Fermer</button>
+          </div>
+        </div>
+        <div id="textboxList" class="stats">Aucune zone de texte.</div>
       </div>
     </div>
 
@@ -625,6 +655,201 @@
     });
   }
 
+  // ---------- zones de texte (blocs multi-lignes, distincts des labels) ----------
+  // Contrairement aux labels (courte étiquette ancrée à un point, éditée via
+  // un prompt() natif qui ne peut pas contenir de retour à la ligne), une
+  // zone de texte est un bloc rectangulaire avec largeur réglable et texte
+  // multi-lignes (retour à la ligne automatique + sauts de ligne manuels),
+  // édité dans un vrai formulaire (textarea) puisque prompt() ne le permet pas.
+  let textboxMode = false;
+  let nextTextboxId = 1;
+  let editingTextboxId = null; // id de la zone en cours d'édition dans le panneau, ou null
+  let draggingTextbox = null;  // référence de la zone en cours de déplacement (drag), ou null
+  let dragTextboxStart = null, dragTextboxOrig = null, dragTextboxMoved = false;
+
+  document.getElementById('btnTextboxMode').addEventListener('click', ()=>{
+    if(!activeDoc()||!activeDoc().img){ alert('Ouvre une coupe d\'abord.'); return; }
+    textboxMode = !textboxMode;
+    document.getElementById('btnTextboxMode').classList.toggle('active', textboxMode);
+    document.getElementById('btnTextboxMode').textContent = textboxMode ? '🗒 clique sur le canevas (Échap pour arrêter)' : '🗒 placer une zone de texte';
+    cancelDrawing();
+  });
+
+  function wrapTextboxLines(ctx, text, maxWidth){
+    const paragraphs = (text||'').split('\n');
+    const lines = [];
+    paragraphs.forEach(para=>{
+      if(para===''){ lines.push(''); return; }
+      const words = para.split(' ');
+      let cur = '';
+      words.forEach(word=>{
+        const test = cur ? cur+' '+word : word;
+        if(cur && ctx.measureText(test).width > maxWidth){ lines.push(cur); cur = word; }
+        else cur = test;
+      });
+      lines.push(cur);
+    });
+    return lines;
+  }
+  function textboxFont(tb){
+    const fontSize = tb.fontSize||14;
+    return (tb.italic?'italic ':'')+(tb.bold?'bold ':'')+fontSize+'px sans-serif';
+  }
+  function textboxMetrics(tb){
+    const fontSize = tb.fontSize||14, pad = 8, w = tb.w||200;
+    ctx.save(); ctx.font = textboxFont(tb);
+    const lines = wrapTextboxLines(ctx, tb.text||'', Math.max(20, w-pad*2));
+    const lineWidths = lines.map(l=>ctx.measureText(l).width);
+    ctx.restore();
+    const lineHeight = Math.round(fontSize*1.35);
+    return {lines, lineWidths, lineHeight, pad, fontSize, w, h: lines.length*lineHeight + pad*2};
+  }
+  function findTextboxAt(doc, p){
+    const list = doc.textboxes||[];
+    for(let i=list.length-1;i>=0;i--){
+      const tb = list[i], m = textboxMetrics(tb);
+      if(p.x>=tb.x && p.x<=tb.x+m.w && p.y>=tb.y && p.y<=tb.y+m.h) return tb;
+    }
+    return null;
+  }
+
+  function textboxFormDirty(){
+    if(editingTextboxId==null) return false;
+    const doc = activeDoc(); if(!doc) return false;
+    const tb = (doc.textboxes||[]).find(t=>t.id===editingTextboxId); if(!tb) return false;
+    return tbText.value!==(tb.text||'') || (parseFloat(tbWidth.value)||0)!==(tb.w||200)
+      || (parseFloat(tbFontSize.value)||0)!==(tb.fontSize||14) || tbColor.value!==(tb.color||'#ffcf4d')
+      || tbBgColor.value!==(tb.bgColor||'#141414') || tbHighlight.checked!==(tb.highlight!==false)
+      || tbBold.checked!==!!tb.bold || tbItalic.checked!==!!tb.italic || tbUnderline.checked!==!!tb.underline;
+  }
+  function onTextboxMouseDown(p){
+    const doc = activeDoc(); if(!doc) return;
+    doc.textboxes = doc.textboxes || [];
+    const hit = findTextboxAt(doc, p);
+    if(hit && editingTextboxId===hit.id){
+      draggingTextbox = hit; dragTextboxStart = p; dragTextboxOrig = {x:hit.x, y:hit.y}; dragTextboxMoved = false;
+      return;
+    }
+    if(textboxFormDirty()){
+      if(!confirm('Des modifications non enregistrées sur la zone de texte en cours seront perdues. Continuer ?')) return;
+      abandonCurrentTextboxEdit();
+    }
+    if(hit){
+      draggingTextbox = hit; dragTextboxStart = p; dragTextboxOrig = {x:hit.x, y:hit.y}; dragTextboxMoved = false;
+    } else {
+      const tb = {id:nextTextboxId++, x:p.x, y:p.y, w:200, fontSize:14, color:'#ffcf4d', bgColor:'#141414', highlight:true, bold:false, italic:false, underline:false, text:''};
+      doc.textboxes.push(tb);
+      openTextboxEditor(tb);
+      render();
+    }
+  }
+  function onTextboxMouseMove(p){
+    if(!draggingTextbox) return;
+    const dx = p.x-dragTextboxStart.x, dy = p.y-dragTextboxStart.y;
+    if(Math.hypot(dx,dy) > 2/zoom) dragTextboxMoved = true;
+    draggingTextbox.x = dragTextboxOrig.x + dx;
+    draggingTextbox.y = dragTextboxOrig.y + dy;
+    render();
+  }
+  function onTextboxMouseUp(){
+    if(!draggingTextbox) return;
+    const tb = draggingTextbox, moved = dragTextboxMoved;
+    draggingTextbox = null; dragTextboxStart = null; dragTextboxOrig = null; dragTextboxMoved = false;
+    if(!moved) openTextboxEditor(tb); // simple clic (pas de glisser) : ouvre l'édition
+    render();
+  }
+
+  const textboxEditor = document.getElementById('textboxEditor');
+  const tbText = document.getElementById('tbText'), tbWidth = document.getElementById('tbWidth'), tbFontSize = document.getElementById('tbFontSize'), tbColor = document.getElementById('tbColor');
+  const tbBgColor = document.getElementById('tbBgColor'), tbHighlight = document.getElementById('tbHighlight');
+  const tbBold = document.getElementById('tbBold'), tbItalic = document.getElementById('tbItalic'), tbUnderline = document.getElementById('tbUnderline');
+  function openTextboxEditor(tb){
+    editingTextboxId = tb.id;
+    textboxEditor.style.display = 'flex';
+    tbText.value = tb.text||'';
+    tbWidth.value = tb.w||200;
+    tbFontSize.value = tb.fontSize||14;
+    tbColor.value = tb.color||'#ffcf4d';
+    tbBgColor.value = tb.bgColor||'#141414';
+    tbHighlight.checked = tb.highlight!==false;
+    tbBold.checked = !!tb.bold; tbItalic.checked = !!tb.italic; tbUnderline.checked = !!tb.underline;
+    document.getElementById('btnTbDelete').style.display = 'inline-block';
+  }
+  function closeTextboxEditor(){
+    editingTextboxId = null;
+    textboxEditor.style.display = 'none';
+  }
+  // Abandonne l'édition en cours : si la zone n'a jamais été enregistrée
+  // (texte encore vide, ex. tout juste créée puis fermée sans rien taper, ou
+  // discrète via le clic ailleurs + confirmation), on la retire du document
+  // plutôt que de laisser une zone fantôme (vide, invisible mais toujours
+  // cliquable) traîner indéfiniment. Si la zone avait déjà du texte enregistré
+  // avant cette session d'édition, elle est simplement laissée telle quelle.
+  function abandonCurrentTextboxEdit(){
+    const doc = activeDoc();
+    if(doc && editingTextboxId!=null){
+      const tb = (doc.textboxes||[]).find(t=>t.id===editingTextboxId);
+      if(tb && !tb.text.trim()) doc.textboxes = doc.textboxes.filter(t=>t.id!==editingTextboxId);
+    }
+    closeTextboxEditor();
+  }
+  document.getElementById('btnTbCancel').addEventListener('click', ()=>{
+    abandonCurrentTextboxEdit(); refreshTextboxList(); render();
+  });
+  document.getElementById('btnTbSave').addEventListener('click', ()=>{
+    const doc = activeDoc(); if(!doc || editingTextboxId==null) return;
+    const tb = (doc.textboxes||[]).find(t=>t.id===editingTextboxId); if(!tb) return;
+    if(!tbText.value.trim()){ doc.textboxes = doc.textboxes.filter(t=>t.id!==editingTextboxId); }
+    else {
+      tb.text = tbText.value;
+      tb.w = Math.max(40, parseFloat(tbWidth.value)||200);
+      tb.fontSize = Math.max(8, parseFloat(tbFontSize.value)||14);
+      tb.color = tbColor.value;
+      tb.bgColor = tbBgColor.value;
+      tb.highlight = tbHighlight.checked;
+      tb.bold = tbBold.checked; tb.italic = tbItalic.checked; tb.underline = tbUnderline.checked;
+    }
+    closeTextboxEditor(); refreshTextboxList(); render();
+  });
+  document.getElementById('btnTbDelete').addEventListener('click', ()=>{
+    const doc = activeDoc(); if(!doc || editingTextboxId==null) return;
+    doc.textboxes = (doc.textboxes||[]).filter(t=>t.id!==editingTextboxId);
+    closeTextboxEditor(); refreshTextboxList(); render();
+  });
+
+  function refreshTextboxList(){
+    const doc = activeDoc();
+    const box = document.getElementById('textboxList');
+    if(!doc || !doc.textboxes || doc.textboxes.length===0){ box.innerHTML='Aucune zone de texte.'; return; }
+    box.innerHTML = doc.textboxes.map(tb=>{
+      const preview = (tb.text||'').split('\n')[0].slice(0,40) || '(vide)';
+      return `<div style="display:flex;justify-content:space-between;gap:4px;padding:3px 0;border-bottom:1px solid var(--line);cursor:pointer;" data-id="${tb.id}">
+        <span>${preview}${(tb.text||'').length>40?'…':''}</span>
+        <button class="small danger" data-del="${tb.id}">✕</button>
+      </div>`;
+    }).join('');
+    box.querySelectorAll('[data-id]').forEach(row=>{
+      row.addEventListener('click', e=>{
+        if(e.target.closest('[data-del]')) return;
+        const tb = doc.textboxes.find(t=>t.id==row.dataset.id);
+        if(!tb || tb.id===editingTextboxId) return;
+        if(textboxFormDirty()){
+          if(!confirm('Des modifications non enregistrées sur la zone de texte en cours seront perdues. Continuer ?')) return;
+          abandonCurrentTextboxEdit();
+        }
+        openTextboxEditor(tb);
+      });
+    });
+    box.querySelectorAll('[data-del]').forEach(btn=>{
+      btn.addEventListener('click', e=>{
+        e.stopPropagation();
+        doc.textboxes = doc.textboxes.filter(t=>t.id!=btn.dataset.del);
+        if(editingTextboxId!=null && !doc.textboxes.find(t=>t.id===editingTextboxId)) closeTextboxEditor();
+        refreshTextboxList(); render();
+      });
+    });
+  }
+
   // ---------- populer les selects statiques ----------
   const fClass = document.getElementById('fClass');
   PERM_CLASSES.forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.label; fClass.appendChild(o); });
@@ -674,7 +899,7 @@
 
   // ---------- documents : création / onglets ----------
   function createDocument(name){
-    const doc = {id: nextDocId++, name: name || ('Coupe '+nextDocId), img:null, imgW:0, imgH:0, layers:[], groups:[], calibPoints:[], calibFit:null, labels:[]};
+    const doc = {id: nextDocId++, name: name || ('Coupe '+nextDocId), img:null, imgW:0, imgH:0, layers:[], groups:[], calibPoints:[], calibFit:null, labels:[], textboxes:[]};
     documents.push(doc);
     activeDocId = doc.id;
     refreshTabs(); switchActiveDoc();
@@ -724,6 +949,8 @@
     retracingLayerId = null;
     document.getElementById('retraceBanner').style.display = 'none';
     cancelDrawing();
+    abandonCurrentTextboxEdit();
+    draggingTextbox = null;
     selectedLayerId = null;
     if(!doc){
       canvasStage.style.display='none'; emptyHint.style.display='block';
@@ -742,6 +969,7 @@
     refreshLayerList();
     refreshCalibList();
     refreshLabelList();
+    refreshTextboxList();
   }
 
   // ---------- chargement fichier (image ou pdf) dans le document actif ----------
@@ -870,6 +1098,8 @@
     cancelDrawing(); closeEditor();
     if(calibMode){ calibMode=false; document.getElementById('btnCalibMode').classList.remove('active'); document.getElementById('btnCalibMode').textContent='📍 placer un point'; }
     if(labelMode){ labelMode=false; document.getElementById('btnLabelMode').classList.remove('active'); document.getElementById('btnLabelMode').textContent='🏷 placer un label'; }
+    if(textboxMode){ textboxMode=false; document.getElementById('btnTextboxMode').classList.remove('active'); document.getElementById('btnTextboxMode').textContent='🗒 placer une zone de texte'; }
+    abandonCurrentTextboxEdit();
 
     const angleRad = angleDeg*Math.PI/180;
     const oldW = doc.imgW, oldH = doc.imgH;
@@ -899,6 +1129,7 @@
     // Les labels n'ont pas d'hypothèse d'axe vertical (contrairement à la
     // calibration) : leur position tourne simplement avec l'image.
     (doc.labels||[]).forEach(lb=>{ const np=rotatePoint(lb, cx, cy, angleRad, ncx, ncy); lb.x=np.x; lb.y=np.y; });
+    (doc.textboxes||[]).forEach(tb=>{ const np=rotatePoint(tb, cx, cy, angleRad, ncx, ncy); tb.x=np.x; tb.y=np.y; });
 
     doc.img = off; doc.imgW = newW; doc.imgH = newH;
 
@@ -918,7 +1149,15 @@
 
   // ---------- type de forme (surface fermée / ligne ouverte) ----------
   const shapeSurfaceBtn=document.getElementById('shapeSurface'), shapeLineBtn=document.getElementById('shapeLine');
-  function setShapeKind(k){ shapeKind=k; shapeSurfaceBtn.classList.toggle('active',k==='surface'); shapeLineBtn.classList.toggle('active',k==='line'); cancelDrawing(); }
+  let lineDrawWidth = 2; // épaisseur choisie au curseur AVANT de dessiner un trait ; s'affine ensuite (début→fin) dans le formulaire de la couche
+  const lineWidthField = document.getElementById('lineWidthField');
+  const lineWidthSlider = document.getElementById('lineWidthSlider');
+  lineWidthSlider.addEventListener('input', ()=>{ lineDrawWidth = parseFloat(lineWidthSlider.value)||2; document.getElementById('lineWidthVal').textContent = lineDrawWidth; render(); });
+  function setShapeKind(k){
+    shapeKind=k; shapeSurfaceBtn.classList.toggle('active',k==='surface'); shapeLineBtn.classList.toggle('active',k==='line');
+    lineWidthField.style.display = k==='line' ? '' : 'none';
+    cancelDrawing();
+  }
   shapeSurfaceBtn.addEventListener('click', ()=>setShapeKind('surface'));
   shapeLineBtn.addEventListener('click', ()=>setShapeKind('line'));
 
@@ -984,6 +1223,7 @@
     const p = getImgCoords(e);
     if(calibMode){ addCalibPoint(p); return; }
     if(labelMode){ onLabelClick(p); return; }
+    if(textboxMode){ onTextboxMouseDown(p); return; }
     if(pendingLayer) return;
     if(editingExistingId!=null){
       if(!confirmDiscardIfDirty()) return;
@@ -1008,6 +1248,7 @@
   canvas.addEventListener('mousemove', e=>{
     const doc=activeDoc(); if(!doc||!doc.img) return;
     mousePos = getImgCoords(e);
+    if(textboxMode && draggingTextbox){ onTextboxMouseMove(mousePos); return; }
     if(mode==='freehand' && drawing){
       const last = currentPoints[currentPoints.length-1];
       if(!last || dist(last,mousePos) > 2.2/zoom){ currentPoints.push(mousePos); render(); }
@@ -1020,6 +1261,7 @@
     }
   });
   canvas.addEventListener('mouseup', ()=>{
+    if(textboxMode && draggingTextbox){ onTextboxMouseUp(); return; }
     if(mode==='freehand' && drawing){
       drawing=false; document.getElementById('btnCancelDraw').disabled=true;
       const minPts = shapeKind==='line' ? 2 : 3;
@@ -1046,6 +1288,8 @@
       if(retracingLayerId!=null) cancelRetrace(); else cancelDrawing();
       if(calibMode){ calibMode=false; document.getElementById('btnCalibMode').classList.remove('active'); document.getElementById('btnCalibMode').textContent='📍 placer un point'; }
       if(labelMode){ labelMode=false; document.getElementById('btnLabelMode').classList.remove('active'); document.getElementById('btnLabelMode').textContent='🏷 placer un label'; }
+      if(textboxMode){ textboxMode=false; document.getElementById('btnTextboxMode').classList.remove('active'); document.getElementById('btnTextboxMode').textContent='🗒 placer une zone de texte'; }
+      if(editingTextboxId!=null) document.getElementById('btnTbCancel').click();
     }
     if(e.key==='Backspace' && mode==='points' && drawing && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){
       e.preventDefault(); currentPoints.pop(); draggingHandleForIndex=null;
@@ -1082,7 +1326,7 @@
       return;
     }
 
-    pendingLayer = {id:null, name:'', points:pts, groupId:'', kind:shapeKind, classId:0, md:'', porosity:'', sw:'', granulo:'', fractur:'', rockColor:'', litho:LITHOLOGIES[0], lithoCustom:'', texture:'hachures_fines', widthStart:2, widthEnd:2, color:PERM_CLASSES[0].color, notes:'', customParams:[], visible:true};
+    pendingLayer = {id:null, name:'', points:pts, groupId:'', kind:shapeKind, classId:0, md:'', porosity:'', sw:'', granulo:'', fractur:'', rockColor:'', litho:LITHOLOGIES[0], lithoCustom:'', texture:'hachures_fines', widthStart:lineDrawWidth, widthEnd:lineDrawWidth, color:PERM_CLASSES[0].color, notes:'', customParams:[], visible:true};
     openEditor(pendingLayer, true); render();
   }
 
@@ -1406,7 +1650,11 @@
     }
 
     if(currentPoints.length>0){
-      ctx.save(); ctx.strokeStyle='#d98e2b'; ctx.fillStyle='#d98e2b'; ctx.lineWidth=2;
+      ctx.save(); ctx.strokeStyle='#d98e2b'; ctx.fillStyle='#d98e2b';
+      // En mode Ligne, le tracé en cours s'affiche à l'épaisseur choisie au
+      // curseur (avant de dessiner) : ce qu'on voit pendant qu'on dessine
+      // correspond déjà à l'épaisseur réelle du trait final.
+      ctx.lineWidth = shapeKind==='line' ? lineDrawWidth : 2;
       ctx.setLineDash(mode==='points'?[6,4]:[]);
       ctx.beginPath(); ctx.moveTo(currentPoints[0].x,currentPoints[0].y);
       for(let i=1;i<currentPoints.length;i++){
@@ -1456,6 +1704,33 @@
       ctx.fillStyle = lb.color || '#ffcf4d';
       ctx.fillText(lb.text, lb.x, lb.y);
       ctx.beginPath(); ctx.arc(lb.x, lb.y+4, 2, 0, Math.PI*2); ctx.fillStyle=lb.color||'#ffcf4d'; ctx.fill();
+      ctx.restore();
+    });
+
+    (doc.textboxes||[]).forEach(tb=>{
+      if(!tb.text) return; // zone tout juste créée, pas encore de texte saisi : rien à afficher
+      const m = textboxMetrics(tb);
+      ctx.save();
+      if(tb.highlight!==false){
+        ctx.globalAlpha = 0.78;
+        ctx.fillStyle = tb.bgColor||'#141414';
+        ctx.fillRect(tb.x, tb.y, m.w, m.h);
+        ctx.globalAlpha = 1;
+      }
+      ctx.strokeStyle = tb.color||'#ffcf4d'; ctx.lineWidth = (editingTextboxId===tb.id)?2:1;
+      ctx.strokeRect(tb.x+0.5, tb.y+0.5, m.w-1, m.h-1);
+      ctx.font = textboxFont(tb);
+      ctx.fillStyle = tb.color||'#ffcf4d';
+      ctx.textBaseline = 'top';
+      m.lines.forEach((line,i)=>{
+        const lx = tb.x+m.pad, ly = tb.y+m.pad+i*m.lineHeight;
+        ctx.fillText(line, lx, ly);
+        if(tb.underline && line){
+          const uy = ly+m.fontSize+1;
+          ctx.beginPath(); ctx.moveTo(lx, uy); ctx.lineTo(lx+m.lineWidths[i], uy);
+          ctx.lineWidth = Math.max(1, m.fontSize*0.06); ctx.strokeStyle = tb.color||'#ffcf4d'; ctx.stroke();
+        }
+      });
       ctx.restore();
     });
 
@@ -1526,6 +1801,7 @@
         groups: d.groups,
         calibPoints: d.calibPoints||[],
         labels: d.labels||[],
+        textboxes: d.textboxes||[],
         layers: d.layers.map(l=>({...l}))
       }))
     };
@@ -1551,7 +1827,8 @@
       const doc = {id:nextDocId++, name:dSrc.name||('Coupe '+nextDocId), img:null, imgW:dSrc.imageWidth||0, imgH:dSrc.imageHeight||0,
                    groups:(dSrc.groups||[]).map(g=>({...g, id:nextGroupId++})), layers:[],
                    calibPoints:(dSrc.calibPoints||[]).map(p=>({...p, id:nextCalibId++})), calibFit:null,
-                   labels:(dSrc.labels||[]).map(lb=>({...lb, id:nextLabelId++}))};
+                   labels:(dSrc.labels||[]).map(lb=>({...lb, id:nextLabelId++})),
+                   textboxes:(dSrc.textboxes||[]).map(tb=>({...tb, id:nextTextboxId++}))};
       const groupMap = {};
       (dSrc.groups||[]).forEach((g,i)=>{ groupMap[g.id] = doc.groups[i].id; });
       doc.layers = (dSrc.layers||[]).map(l=>({...l, id:nextLayerId++, groupId: l.groupId?groupMap[l.groupId]||'':''}));
