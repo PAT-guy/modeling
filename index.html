@@ -51,65 +51,48 @@ try{
      plutôt qu'une refonte complète qui déplacerait le contenu des panneaux (et casserait au
      passage les identifiants que le reste du script référence) — cliquer un onglet ouvre le
      panneau visé et y fait défiler la page, ferme les autres, sans toucher à leur contenu. */
-  /* Le ruban déborde horizontalement dès qu'il y a trop d'onglets pour la largeur d'écran
-     (repéré par un audit d'ergonomie : à 1400px déjà, "Failles" est le dernier onglet visible,
-     coupé net, sans aucun indice qu'il en reste trois de plus après — seule une fine barre de
-     défilement navigateur, facile à ne jamais remarquer, le signalait). Les dégradés ci-dessous
-     (voir updateRibbonFades côté JS) n'apparaissent QUE quand il reste effectivement du contenu
-     à faire défiler de ce côté, pour rendre ce débordement visible sans reconstruire tout le
-     ruban en plusieurs lignes. */
-  .ribbon-wrap{position:relative;flex:0 0 auto;}
-  .ribbon{
-    display:flex;align-items:stretch;gap:2px;padding:0 18px;background:var(--ink-2);
-    border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin;
+  /* Refonte "navigation à 3 colonnes" (rail d'icônes -> liste de rubriques -> panneau de
+     réglages, avant la vue 3D) à la place de l'ancien ruban déroulant du haut : chaque
+     catégorie (.ribbon-group-btn, data-group) vit dans la colonne étroite .nav-rail ; sa liste
+     d'onglets (.ribbon-dropdown, même data-group) vit dans .nav-list, visible seulement pour la
+     catégorie sélectionnée (classe .open) -- plus de position:fixed ni de calcul de coordonnées
+     en JS, la liste reste simplement en flux normal dans sa colonne. Les classes/ids déjà
+     référencés ailleurs (.ribbon-tab, data-target, #ribbon) sont conservés à l'identique pour ne
+     pas toucher à la logique d'ouverture de panneau ni à la visite guidée. */
+  .nav-rail{
+    flex:0 0 76px;background:var(--ink-2);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;overflow-y:auto;
   }
-  .ribbon-tab{
-    background:none;border:none;border-bottom:2px solid transparent;color:var(--paper-dim);
-    padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap;
-    display:flex;align-items:center;gap:6px;
-  }
-  .ribbon-tab:hover{color:var(--paper);background:rgba(255,255,255,0.03);}
-  .ribbon-tab.active{color:var(--accent-blue);border-bottom-color:var(--accent-blue-dim);}
-  .ribbon-sep{flex:0 0 1px;background:var(--line);margin:8px 4px;}
-
-  /* Regroupement du ruban en familles (Import/Structure/Analyse/Export) : ~15 onglets à plat
-     débordaient déjà de l'écran dès 1400px de large (voir .ribbon-fade ci-dessous, ajouté pour
-     le signaler) -- quelques boutons de groupe avec un menu déroulant réduisent la largeur
-     utile et, accessoirement, rendent ce débordement bien moins probable en pratique.
-     .ribbon-dropdown est en position:fixed (positionné en JS depuis le rect du bouton de
-     groupe, voir openRibbonGroup) plutôt qu'absolute : le ruban a overflow-x:auto, qui force
-     aussi un clip vertical -- un dropdown en position absolute serait tronqué par ce clip. */
-  .ribbon-group{position:relative;flex:0 0 auto;}
   .ribbon-group-btn{
-    height:100%;background:none;border:none;border-bottom:2px solid transparent;color:var(--paper-dim);
-    padding:10px 12px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap;
-    display:flex;align-items:center;gap:6px;
+    width:100%;display:flex;flex-direction:column;align-items:center;gap:5px;
+    background:none;border:1px solid transparent;border-radius:8px;color:var(--paper-dim);
+    padding:9px 4px;font-size:9.5px;text-transform:uppercase;letter-spacing:0.03em;
+    cursor:pointer;font-family:"SF Mono","Consolas",monospace;
   }
-  .ribbon-group-btn:hover{color:var(--paper);background:rgba(255,255,255,0.03);}
-  .ribbon-group-btn .caret{font-size:9px;opacity:0.6;}
-  .ribbon-group.active .ribbon-group-btn{color:var(--accent-blue);border-bottom-color:var(--accent-blue-dim);}
-  .ribbon-group.open .ribbon-group-btn{color:var(--paper);background:rgba(255,255,255,0.05);}
-  .ribbon-dropdown{
-    position:fixed;display:none;flex-direction:column;background:var(--ink-2);border:1px solid var(--line);
-    border-radius:4px;box-shadow:0 10px 24px rgba(0,0,0,0.45);z-index:50;min-width:230px;padding:4px;
+  .ribbon-group-btn:hover{color:var(--paper);background:rgba(255,255,255,0.05);}
+  .ribbon-group-btn .caret{display:none;}
+  .ribbon-group-btn.active{color:var(--core);background:rgba(232,163,61,.14);}
+  .nav-list{
+    flex:0 0 208px;background:var(--ink-2);border-right:1px solid var(--line);
+    padding:14px 10px;overflow-y:auto;
   }
-  .ribbon-group.open .ribbon-dropdown{display:flex;}
-  .ribbon-dropdown .ribbon-tab{
-    width:100%;text-align:left;justify-content:flex-start;border-bottom:none;border-radius:3px;padding:9px 10px;
+  .ribbon-dropdown{display:none;flex-direction:column;gap:2px;}
+  .ribbon-dropdown.open{display:flex;}
+  .ribbon-tab{
+    width:100%;background:none;border:1px solid transparent;border-radius:6px;color:var(--paper-dim);
+    padding:9px 10px;font-size:13px;cursor:pointer;font-family:inherit;text-align:left;
+    display:flex;align-items:center;gap:8px;
   }
-  .ribbon-dropdown .ribbon-tab.active{color:var(--accent-blue);background:rgba(111,183,232,0.12);}
-  .ribbon-fade{position:absolute;top:0;bottom:1px;width:34px;pointer-events:none;z-index:2;opacity:0;
-    transition:opacity .15s;display:flex;align-items:center;font-size:13px;color:var(--core-dim);}
-  .ribbon-fade.visible{opacity:1;}
-  .ribbon-fade-left{left:0;background:linear-gradient(to right, var(--ink-2) 40%, transparent);justify-content:flex-start;padding-left:4px;}
-  .ribbon-fade-right{right:0;background:linear-gradient(to left, var(--ink-2) 40%, transparent);justify-content:flex-end;padding-right:4px;}
+  .ribbon-tab:hover{color:var(--paper);background:rgba(255,255,255,0.05);}
+  .ribbon-tab.active{color:var(--core);background:rgba(232,163,61,.15);font-weight:600;}
+  .ribbon-sep{display:none;}
 
   /* Deux colonnes : le panneau de contrôle défile sur lui-même, la vue 3D reste toujours
      visible et se redimensionne (voir onResize côté JS, déjà branché sur clientWidth/Height
      du #viewport) — sans ça, régler un paramètre oblige à défiler toute la page pour voir
      l'effet, puis remonter pour régler le suivant. */
   .layout{flex:1 1 auto;display:flex;min-height:0;}
-  .sidebar{flex:0 0 420px;overflow-y:auto;padding:18px 20px 50px;border-right:1px solid var(--line);scrollbar-color:var(--line) var(--ink);}
+  .sidebar{flex:0 0 320px;overflow-y:auto;padding:18px 20px 50px;border-right:1px solid var(--line);scrollbar-color:var(--line) var(--ink);}
   .sidebar::-webkit-scrollbar{width:9px;}
   .sidebar::-webkit-scrollbar-track{background:var(--ink);}
   .sidebar::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px;}
@@ -118,7 +101,7 @@ try{
   .jumpToView{display:none;}
   /* Basculer la barre latérale (et le panneau Contenu) pour une vue 3D pleine largeur, utile
      avant une capture d'écran ou en vue multi-angles où chaque quadrant devient tout petit. */
-  body.sidebar-hidden .sidebar, body.sidebar-hidden .contents-dock{display:none;}
+  body.sidebar-hidden .sidebar, body.sidebar-hidden .contents-dock, body.sidebar-hidden .nav-rail, body.sidebar-hidden .nav-list{display:none;}
   /* Vue multi-angles : quatre rendus dans un seul canvas WebGL (scissor test), avec juste des
      repères HTML par-dessus (lignes de séparation + nom de chaque quadrant) — pas de 2e/3e/4e
      renderer, qui coûterait cher et compliquerait la synchronisation avec la scène. */
@@ -139,6 +122,13 @@ try{
     .layout{flex-direction:column;}
     .sidebar{flex:0 0 auto;max-height:46vh;border-right:none;border-bottom:1px solid var(--line);}
     .viewer-col{min-height:360px;}
+    /* Rail + liste empilés horizontalement au-dessus du panneau de réglages plutôt qu'à côté,
+       même raisonnement que l'ancien ruban en scroll horizontal qu'ils remplacent. */
+    .nav-rail{flex:0 0 auto !important;width:auto !important;flex-direction:row !important;
+      border-right:none !important;border-bottom:1px solid var(--line);overflow-x:auto;overflow-y:visible;}
+    .ribbon-group-btn{width:auto;flex:0 0 auto;flex-direction:row;padding:8px 10px;}
+    .nav-list{flex:0 0 auto !important;max-height:160px;width:auto !important;
+      border-right:none !important;border-bottom:1px solid var(--line);}
     /* Le panneau tient déjà dans 46vh avec défilement propre, mais sur mobile la vue 3D — le
        vrai résultat — reste hors champ tant qu'on n'a pas fait défiler le panneau en premier.
        Un lien direct évite d'avoir à deviner qu'il faut défiler avant de voir quoi que ce soit. */
@@ -337,10 +327,9 @@ try{
   #dropOverlay .drop-msg{font-size:20px;font-weight:600;color:var(--core);text-align:center;font-family:'SF Mono',monospace;}
   #dropOverlay .drop-msg span{display:block;margin-top:8px;font-size:12px;font-weight:400;color:var(--paper-dim);text-transform:none;letter-spacing:0;}
 
-  /* Popover "Préférences" : même mécanique que .ribbon-dropdown (position:fixed positionné en
-     JS depuis le rect du bouton, un seul overlay ouvert à la fois, fermé par clic ailleurs ou
-     Échap) -- regroupe thème/densité/taille de texte dans UN SEUL bouton d'en-tête plutôt que
-     quatre boutons séparés, même logique que le regroupement du ruban en familles. */
+  /* Popover "Préférences" : position:fixed positionnée en JS depuis le rect du bouton, un seul
+     overlay ouvert à la fois, fermé par clic ailleurs ou Échap -- regroupe thème/densité/taille
+     de texte dans UN SEUL bouton d'en-tête plutôt que quatre boutons séparés. */
   #prefsPopover{
     position:fixed;display:none;flex-direction:column;gap:10px;background:var(--ink-2);border:1px solid var(--line);
     border-radius:4px;box-shadow:0 10px 24px rgba(0,0,0,0.45);z-index:50;min-width:240px;padding:14px 16px;
@@ -401,6 +390,7 @@ try{
     </label>
     <button class="btn-ghost" onclick="toggleShortcutsPanel()" data-i18n="header.shortcuts" title="Raccourcis clavier disponibles">⌨️ Raccourcis</button>
     <button class="btn-ghost" id="prefsToggleBtn" onclick="togglePrefsPopover()" data-i18n="header.prefs" title="Thème, densité d'affichage, taille de police, langue">⚙️ Préférences</button>
+    <button class="btn-ghost" id="ribbonSidebarToggle" onclick="toggleSidebar()" title="Basculer la barre latérale">↔</button>
   </div>
 </header>
 
@@ -443,54 +433,45 @@ try{
   <div class="note" style="margin-top:10px;" data-i18n="shortcuts.note">Ctrl/Cmd+S et Ctrl/Cmd+Z sont désactivés pendant la saisie dans un champ (texte, nombre, liste déroulante), pour ne jamais interrompre une frappe ni entrer en conflit avec l'annulation native du navigateur dans ce champ.</div>
 </div>
 
-<div class="ribbon-wrap">
-<nav class="ribbon" id="ribbon">
-  <div class="ribbon-group" data-group="import">
-    <button class="ribbon-group-btn">📥 <span data-i18n="ribbon.import.name">Import</span><span class="caret">▾</span></button>
-    <div class="ribbon-dropdown">
-      <button class="ribbon-tab" data-target="panelDonnees">📁 <span data-i18n="tab.data">Données</span></button>
-      <button class="ribbon-tab" data-target="panelColler">📋 <span data-i18n="tab.paste">Coller depuis Excel</span></button>
-    </div>
-  </div>
-  <div class="ribbon-group" data-group="structure">
-    <button class="ribbon-group-btn">🧱 <span data-i18n="ribbon.structure.name">Structure</span><span class="caret">▾</span></button>
-    <div class="ribbon-dropdown">
-      <button class="ribbon-tab" data-target="panelBornes">📐 <span data-i18n="tab.bounds">Bornes des réservoirs</span></button>
-      <button class="ribbon-tab" data-target="panelControle">📍 <span data-i18n="tab.controlPoints">Points de contrôle</span></button>
-      <button class="ribbon-tab" data-target="panelDeviation">📈 <span data-i18n="tab.deviatedWells">Puits déviés</span></button>
-      <button class="ribbon-tab" data-target="panelReservoirs">🧱 <span data-i18n="tab.reservoirs3d">Réservoirs 3D</span></button>
-      <button class="ribbon-tab" data-target="panelOreBody">⛏️ <span data-i18n="tab.oreBody">Corps minéralisé 3D</span></button>
-      <button class="ribbon-tab" data-target="panelFaults">🔻 <span data-i18n="tab.faults">Failles</span></button>
-      <button class="ribbon-tab" data-target="panelSeismic">🖼️ <span data-i18n="tab.seismic">Image sismique</span></button>
-    </div>
-  </div>
-  <div class="ribbon-group" data-group="analyse">
-    <button class="ribbon-group-btn">🔬 <span data-i18n="ribbon.analysis.name">Analyse</span><span class="caret">▾</span></button>
-    <div class="ribbon-dropdown">
-      <button class="ribbon-tab" data-target="panelAffichage">🎨 <span data-i18n="tab.display">Affichage</span></button>
-      <button class="ribbon-tab" data-target="panelInterp">🔢 <span data-i18n="tab.interpolation">Interpolation</span></button>
-      <button class="ribbon-tab" data-target="panelCoupe">✂️ <span data-i18n="tab.crossSection">Coupe</span></button>
-      <button class="ribbon-tab" data-target="panelCarte">🗺️ <span data-i18n="tab.map2d">Carte 2D</span></button>
-      <button class="ribbon-tab" data-target="panelMeasure">📏 <span data-i18n="tab.measure">Outils de mesure</span></button>
-      <button class="ribbon-tab" data-target="panelVectors">🧭 <span data-i18n="tab.vectors">Vecteurs directionnels</span></button>
-      <button class="ribbon-tab" data-target="panelCorrelation">📊 <span data-i18n="tab.correlation">Corrélation puits</span></button>
-    </div>
-  </div>
-  <div class="ribbon-group" data-group="export">
-    <button class="ribbon-group-btn">🖨️ <span data-i18n="ribbon.export.name">Export</span><span class="caret">▾</span></button>
-    <div class="ribbon-dropdown">
-      <button class="ribbon-tab" data-target="panelLayout">🖼️ <span data-i18n="tab.layout">Mise en page</span></button>
-    </div>
-  </div>
-  <div class="ribbon-sep"></div>
-  <button class="ribbon-tab" data-target="panelAide">❓ <span data-i18n="ribbon.help.name">Glossaire &amp; aide</span></button>
-  <button class="ribbon-tab" id="ribbonSidebarToggle" onclick="toggleSidebar()" title="Basculer la barre latérale" style="margin-left:auto;">↔</button>
-</nav>
-<div class="ribbon-fade ribbon-fade-left" id="ribbonFadeLeft">‹</div>
-<div class="ribbon-fade ribbon-fade-right" id="ribbonFadeRight">›</div>
-</div>
-
 <div class="layout">
+<nav class="nav-rail" id="ribbon">
+  <button class="ribbon-group-btn" data-group="import">📥<span data-i18n="ribbon.import.name">Import</span></button>
+  <button class="ribbon-group-btn" data-group="structure">🧱<span data-i18n="ribbon.structure.name">Structure</span></button>
+  <button class="ribbon-group-btn" data-group="analyse">🔬<span data-i18n="ribbon.analysis.name">Analyse</span></button>
+  <button class="ribbon-group-btn" data-group="export">🖨️<span data-i18n="ribbon.export.name">Export</span></button>
+  <button class="ribbon-group-btn" data-group="aide">❓<span data-i18n="ribbon.help.short">Aide</span></button>
+</nav>
+<aside class="nav-list" id="navList">
+  <div class="ribbon-dropdown" data-group="import">
+    <button class="ribbon-tab" data-target="panelDonnees">📁 <span data-i18n="tab.data">Données</span></button>
+    <button class="ribbon-tab" data-target="panelColler">📋 <span data-i18n="tab.paste">Coller depuis Excel</span></button>
+  </div>
+  <div class="ribbon-dropdown" data-group="structure">
+    <button class="ribbon-tab" data-target="panelBornes">📐 <span data-i18n="tab.bounds">Bornes des réservoirs</span></button>
+    <button class="ribbon-tab" data-target="panelControle">📍 <span data-i18n="tab.controlPoints">Points de contrôle</span></button>
+    <button class="ribbon-tab" data-target="panelDeviation">📈 <span data-i18n="tab.deviatedWells">Puits déviés</span></button>
+    <button class="ribbon-tab" data-target="panelReservoirs">🧱 <span data-i18n="tab.reservoirs3d">Réservoirs 3D</span></button>
+    <button class="ribbon-tab" data-target="panelOreBody">⛏️ <span data-i18n="tab.oreBody">Corps minéralisé 3D</span></button>
+    <button class="ribbon-tab" data-target="panelFaults">🔻 <span data-i18n="tab.faults">Failles</span></button>
+    <button class="ribbon-tab" data-target="panelSeismic">🖼️ <span data-i18n="tab.seismic">Image sismique</span></button>
+  </div>
+  <div class="ribbon-dropdown" data-group="analyse">
+    <button class="ribbon-tab" data-target="panelAffichage">🎨 <span data-i18n="tab.display">Affichage</span></button>
+    <button class="ribbon-tab" data-target="panelInterp">🔢 <span data-i18n="tab.interpolation">Interpolation</span></button>
+    <button class="ribbon-tab" data-target="panelCoupe">✂️ <span data-i18n="tab.crossSection">Coupe</span></button>
+    <button class="ribbon-tab" data-target="panelCarte">🗺️ <span data-i18n="tab.map2d">Carte 2D</span></button>
+    <button class="ribbon-tab" data-target="panelMeasure">📏 <span data-i18n="tab.measure">Outils de mesure</span></button>
+    <button class="ribbon-tab" data-target="panelVectors">🧭 <span data-i18n="tab.vectors">Vecteurs directionnels</span></button>
+    <button class="ribbon-tab" data-target="panelCorrelation">📊 <span data-i18n="tab.correlation">Corrélation puits</span></button>
+  </div>
+  <div class="ribbon-dropdown" data-group="export">
+    <button class="ribbon-tab" data-target="panelLayout">🖼️ <span data-i18n="tab.layout">Mise en page</span></button>
+  </div>
+  <div class="ribbon-dropdown" data-group="aide">
+    <button class="ribbon-tab" data-target="panelAide">❓ <span data-i18n="ribbon.help.name">Glossaire &amp; aide</span></button>
+  </div>
+</aside>
+
 <aside class="sidebar">
   <details class="panel" id="panelDonnees" open>
     <summary data-i18n="panel.data">Données</summary>
@@ -2716,6 +2697,7 @@ const I18N = { fr:{}, en:{
   'ribbon.analysis.name': 'Analysis',
   'ribbon.export.name': 'Export',
   'ribbon.help.name': 'Glossary & help',
+  'ribbon.help.short': 'Help',
   'tab.data': 'Data',
   'tab.paste': 'Paste from Excel',
   'tab.bounds': 'Reservoir tops/bases',
@@ -10441,51 +10423,60 @@ function openPanelById(id){
   if(!target) return;
   document.querySelectorAll('.sidebar > details.panel').forEach(d=>{ if(d!==target) d.removeAttribute('open'); });
   target.setAttribute('open','');
+  // Fait suivre la liste de rubriques (colonne .nav-list) à la catégorie du panneau qu'on vient
+  // d'ouvrir, quel que soit le point d'entrée (clic sur un onglet, bouton "Aller" de
+  // l'Assistant, visite guidée) -- sinon la liste visible pourrait ne plus correspondre au
+  // panneau réellement affiché.
+  const tabBtn = document.querySelector(`.ribbon-tab[data-target="${id}"]`);
+  const dropdown = tabBtn && tabBtn.closest('.ribbon-dropdown');
+  if(dropdown && dropdown.dataset.group) openRibbonGroup(dropdown.dataset.group);
   target.scrollIntoView({behavior:'smooth', block:'start'});
 }
 window.openPanelById = openPanelById;
-// Regroupement du ruban (voir .ribbon-group dans le CSS) : chaque bouton de groupe déplie un
-// menu contenant ses onglets ; cliquer un onglet ouvre son panneau comme avant ET referme le
-// menu. Un seul menu ouvert à la fois, fermé par un clic ailleurs, la touche Échap, ou tout
-// défilement/redimensionnement (sa position est calculée une fois à l'ouverture -- pas la peine
-// de la garder synchronisée avec un scroll en cours, plus simple de la refermer).
+// Navigation à 3 colonnes (rail .nav-rail -> liste .nav-list -> panneau de réglages .sidebar) :
+// chaque catégorie (.ribbon-group-btn, data-group) affiche sa propre liste d'onglets
+// (.ribbon-dropdown, même data-group) dans .nav-list -- une seule liste visible à la fois
+// (classe .open), en flux normal dans sa colonne plutôt qu'un menu flottant positionné en JS.
 function closeAllRibbonDropdowns(){
-  document.querySelectorAll('.ribbon-group.open').forEach(g=> g.classList.remove('open'));
+  document.querySelectorAll('.ribbon-dropdown.open').forEach(d=> d.classList.remove('open'));
 }
-function openRibbonGroup(group){
-  const btn = group.querySelector('.ribbon-group-btn');
-  const dropdown = group.querySelector('.ribbon-dropdown');
-  const r = btn.getBoundingClientRect();
-  dropdown.style.left = Math.round(r.left)+'px';
-  dropdown.style.top = Math.round(r.bottom)+'px';
-  group.classList.add('open');
+function openRibbonGroup(groupName){
+  closeAllRibbonDropdowns();
+  const dropdown = document.querySelector(`.ribbon-dropdown[data-group="${groupName}"]`);
+  if(dropdown) dropdown.classList.add('open');
 }
 document.querySelectorAll('.ribbon-group-btn').forEach(btn=>{
-  btn.addEventListener('click', e=>{
-    e.stopPropagation();
-    const group = btn.closest('.ribbon-group');
-    const wasOpen = group.classList.contains('open');
-    closeAllRibbonDropdowns();
-    if(!wasOpen) openRibbonGroup(group);
+  btn.addEventListener('click', ()=>{
+    // Clique sur une catégorie : rouvre le dernier onglet actif de cette catégorie s'il y en a
+    // un, sinon son premier onglet -- jamais une liste affichée sans panneau de réglages
+    // correspondant derrière.
+    const dropdown = document.querySelector(`.ribbon-dropdown[data-group="${btn.dataset.group}"]`);
+    if(!dropdown) return;
+    const activeTab = Array.from(dropdown.querySelectorAll('.ribbon-tab')).find(b=>b.classList.contains('active'));
+    const target = activeTab || dropdown.querySelector('.ribbon-tab');
+    if(target) openPanelById(target.dataset.target);
+    else openRibbonGroup(btn.dataset.group);
   });
 });
-document.addEventListener('click', closeAllRibbonDropdowns);
-document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeAllRibbonDropdowns(); });
-window.addEventListener('resize', closeAllRibbonDropdowns);
-document.getElementById('ribbon').addEventListener('scroll', closeAllRibbonDropdowns);
 
 document.querySelectorAll('.ribbon-tab').forEach(btn=>{
-  btn.addEventListener('click', ()=> { openPanelById(btn.dataset.target); closeAllRibbonDropdowns(); });
+  btn.addEventListener('click', ()=> openPanelById(btn.dataset.target));
 });
 function syncRibbonActiveTab(){
   document.querySelectorAll('.ribbon-tab').forEach(btn=>{
     const target = document.getElementById(btn.dataset.target);
     btn.classList.toggle('active', !!(target && target.open));
   });
-  document.querySelectorAll('.ribbon-group').forEach(group=>{
-    const anyActive = Array.from(group.querySelectorAll('.ribbon-tab')).some(b=>b.classList.contains('active'));
-    group.classList.toggle('active', anyActive);
+  let fallbackGroup = null;
+  document.querySelectorAll('.ribbon-group-btn').forEach(btn=>{
+    const dropdown = document.querySelector(`.ribbon-dropdown[data-group="${btn.dataset.group}"]`);
+    const anyActive = dropdown ? Array.from(dropdown.querySelectorAll('.ribbon-tab')).some(b=>b.classList.contains('active')) : false;
+    btn.classList.toggle('active', anyActive);
+    if(anyActive && !fallbackGroup) fallbackGroup = btn.dataset.group;
   });
+  // Si aucune liste n'est visible (premier chargement, ou tous les panneaux viennent de se
+  // fermer), affiche celle de la catégorie active -- "import" par défaut à défaut de mieux.
+  if(!document.querySelector('.ribbon-dropdown.open')) openRibbonGroup(fallbackGroup || 'import');
 }
 document.querySelectorAll('.sidebar > details.panel').forEach(d=> d.addEventListener('toggle', syncRibbonActiveTab));
 syncRibbonActiveTab();
@@ -10508,22 +10499,6 @@ REMEMBERED_PREF_FIELDS.forEach(id=>{
   if(!el) return;
   el.addEventListener('change', ()=>{ try{ localStorage.setItem('puits3d-pref-'+id, el.value); }catch(err){} });
 });
-
-// Dégradés de bord du ruban (voir .ribbon-fade dans le CSS) : visibles seulement du côté où il
-// reste effectivement des onglets masqués par le défilement horizontal, pour qu'un ruban trop
-// chargé pour la largeur d'écran se signale de lui-même plutôt que de compter sur une fine
-// barre de défilement du navigateur, facile à ne jamais remarquer.
-function updateRibbonFades(){
-  const ribbon = document.getElementById('ribbon');
-  const fadeLeft = document.getElementById('ribbonFadeLeft');
-  const fadeRight = document.getElementById('ribbonFadeRight');
-  if(!ribbon || !fadeLeft || !fadeRight) return;
-  fadeLeft.classList.toggle('visible', ribbon.scrollLeft > 2);
-  fadeRight.classList.toggle('visible', ribbon.scrollLeft < ribbon.scrollWidth - ribbon.clientWidth - 2);
-}
-document.getElementById('ribbon').addEventListener('scroll', updateRibbonFades);
-window.addEventListener('resize', updateRibbonFades);
-updateRibbonFades();
 
 // Assistant pas-à-pas : les ~10 panneaux du ruban supposent un ordre de manipulation implicite
 // (créer les couches AVANT de coller les bornes, par ex.) qui n'est écrit nulle part ailleurs
@@ -10608,9 +10583,9 @@ function tourPositionFor(step){
   };
   const el = step.selector ? document.querySelector(step.selector) : null;
   if(!el){ centerCard(); return; }
-  // Un onglet du ruban visé peut désormais vivre dans un menu déroulant replié (voir
-  // .ribbon-group) -- son rect serait sinon {0,0,0,0} tant que le menu n'est pas ouvert. Ouvrir
-  // le bon groupe (et fermer les autres) avant de mesurer, comme un clic réel le ferait.
+  // Un onglet visé peut désormais vivre dans une liste de rubriques (.nav-list) masquée tant
+  // que sa catégorie n'est pas sélectionnée (voir .ribbon-dropdown) -- son rect serait sinon
+  // {0,0,0,0}. Affiche la bonne liste avant de mesurer, comme un clic réel le ferait.
   // Le tout dans un setTimeout(0) : tourPositionFor est appelée depuis le clic sur "Suivant",
   // qui continue de remonter (bubbling) jusqu'à l'écouteur global "clic ailleurs = referme les
   // menus du ruban" APRÈS le retour de cette fonction -- sans ce report, ce même clic rouvrait
@@ -10618,8 +10593,8 @@ function tourPositionFor(step){
   // mesurer sa position.
   setTimeout(()=>{
     closeAllRibbonDropdowns();
-    const parentGroup = el.closest('.ribbon-group');
-    if(parentGroup) openRibbonGroup(parentGroup);
+    const parentDropdown = el.closest('.ribbon-dropdown');
+    if(parentDropdown && parentDropdown.dataset.group) openRibbonGroup(parentDropdown.dataset.group);
     el.scrollIntoView({block:'center', inline:'center', behavior:'instant'});
     // Après scrollIntoView : un frame d'attente pour que le navigateur ait fini de repositionner
     // avant de mesurer getBoundingClientRect, sinon le halo se cale sur la position PRÉ-scroll.
